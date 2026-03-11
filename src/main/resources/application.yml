@@ -5,12 +5,12 @@ spring:
     url: jdbc:mysql://localhost:3306/security_test
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
-    password: 123456
+    password: 11111111111111
   data:
     redis:
       host: 192.168.26.128
       port: 6379
-      password: l0034
+      password: 1111111111111
       database: 0
       timeout: 10000ms
       lettuce:
@@ -35,6 +35,6 @@ upload:
 aliyun:
   oss:
     endpoint: oss-cn-beijing.aliyuncs.com # 地域节点
-    accessKeyId: LTAI5tPPCCa2s9zEQ2QfJQDC
-    accessKeySecret: M8eZMPD23wu9zFVFgtiyeCxx1koJt4
+    accessKeyId: 111111111111111111
+    accessKeySecret: 1111111111111
     bucketName: java-work4
