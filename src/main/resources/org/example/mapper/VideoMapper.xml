@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.mapper.VideoMapper">
+    <update id="batchIncrementCount">
+        update video
+        set ${columName} = ${columName} +
+        <choose>
+            <when test="videos != null and videos.size() > 0">
+                <foreach collection="videos" item="video" open="CASE id " separator=" " close=" end">
+                    when #{video.id} then #{video.increment}
+                </foreach>
+            </when>
+            <otherwise>0</otherwise>
+        </choose>
+        where id in
+        <foreach collection="videos" item="video" open="(" separator="," close=")">
+            #{video.id}
+        </foreach>
+    </update>
+    <select id="selectSearchVideoList" resultType="org.example.model.pojo.Video">
+        select id,user_id,video_url,cover_url,title,description,visit_count,like_count,comment_count,created_at,updated_at,deleted_at
+        from video
+            ${ew.customSqlSegment}
+    </select>
+</mapper>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.mapper.LikeMapper">
+    <select id="getLikeVideos" resultType="org.example.model.pojo.Video">
+        select v.*
+        from video  v
+        inner join `like` l on v.id=l.video_id
+        ${ew.customSqlSegment}
+    </select>
+    <select id="selectUserIdsByVideoId" resultType="java.lang.Long">
+        select user_id from `like` where video_id=#{videoId}
+    </select>
+</mapper>

@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: work4_self
+  datasource:
+    url: jdbc:mysql://localhost:3306/security_test
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: 123456
+  data:
+    redis:
+      host: 192.168.26.128
+      port: 6379
+      password: l0034
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        # 连接池配置
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+  type-aliases-package: org.example.pojo
+  global-config:
+    db-config:
+      id-type: assign_id # id为雪花算法生成
+      update-strategy: not_null # 更新策略：只更新非空字段
+upload:
+  path: D:/app/intelliJ IDEA/code/JavaSE/springSecurityTest/save
+aliyun:
+  oss:
+    endpoint: oss-cn-beijing.aliyuncs.com # 地域节点
+    accessKeyId: LTAI5tPPCCa2s9zEQ2QfJQDC
+    accessKeySecret: M8eZMPD23wu9zFVFgtiyeCxx1koJt4
+    bucketName: java-work4
