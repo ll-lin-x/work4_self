@@ -1,6 +1,6 @@
 package org.example.controller;
 
-import org.example.model.pojo.Result;
+import org.example.model.normal.Result;
 import org.example.model.pojo.User;
 import org.example.service.Impl.UserServiceImpl;
 

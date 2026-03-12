@@ -16,6 +16,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import static org.example.model.normal.RedisKey.VIDEO_RANK_INCREMENT;
+import static org.example.model.normal.RedisKey.VIDEO_RANK_TOTAL;
+
 @Component
 public class VideoRankSyncTask {
     @Autowired
@@ -26,7 +29,7 @@ public class VideoRankSyncTask {
 
     @Scheduled(cron = "0 0/10 * * * ?")
     public void syncRedisToDb(){
-        String key = "video:rank:increment:";
+        String key = VIDEO_RANK_INCREMENT;
         Map<String,Integer> entries = redisTemplate.opsForHash().entries(key);
         if(CollectionUtils.isEmpty(entries)) return;
 
@@ -38,7 +41,7 @@ public class VideoRankSyncTask {
 
     @Scheduled(cron = "0 5 3 * * ?")
     public void calibrateVideoRank(){
-        String key = "video:rank:total:";
+        String key = VIDEO_RANK_TOTAL;
         List<Video> videoList = videoMapper.selectList(new LambdaQueryWrapper<Video>()
                 .select(Video::getId, Video::getVisitCount)
                 .orderByDesc(Video::getVisitCount)

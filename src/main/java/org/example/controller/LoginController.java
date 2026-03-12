@@ -2,7 +2,7 @@ package org.example.controller;
 
 import org.example.model.dto.UserLoginDTO;
 import org.example.model.pojo.User;
-import org.example.model.pojo.Result;
+import org.example.model.normal.Result;
 import org.example.service.Impl.UserServiceImpl;
 import org.example.service.LoginService;
 import org.example.model.vo.UserVO;

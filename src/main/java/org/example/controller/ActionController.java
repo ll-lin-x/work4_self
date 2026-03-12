@@ -5,7 +5,7 @@ import org.example.model.dto.CommentPublishDTO;
 import org.example.model.dto.LikeActionDTO;
 import org.example.model.dto.LikeListDTO;
 import org.example.model.pojo.Comment;
-import org.example.model.pojo.Result;
+import org.example.model.normal.Result;
 import org.example.model.pojo.User;
 import org.example.model.pojo.Video;
 import org.example.model.vo.CommentVO;
@@ -17,7 +17,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;

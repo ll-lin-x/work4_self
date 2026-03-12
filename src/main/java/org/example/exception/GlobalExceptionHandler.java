@@ -1,6 +1,6 @@
 package org.example.exception;
 
-import org.example.model.pojo.Result;
+import org.example.model.normal.Result;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 

@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.example.mapper.UserMapper;
 import org.example.model.pojo.LoginUserDetails;
-import org.example.model.pojo.Result;
+import org.example.model.normal.Result;
 import org.example.model.pojo.User;
 import org.example.utils.FileUtil;
 import org.springframework.beans.factory.annotation.Autowired;

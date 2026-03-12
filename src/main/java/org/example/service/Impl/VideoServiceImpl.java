@@ -9,11 +9,14 @@ import org.example.mapper.VideoMapper;
 import org.example.model.dto.VideoListDTO;
 import org.example.model.dto.VideoPublishDTO;
 import org.example.model.dto.VideoSearchDTO;
-import org.example.model.pojo.Result;
+import org.example.model.normal.RedisKey;
+import org.example.model.normal.Result;
 import org.example.model.pojo.User;
 import org.example.model.pojo.Video;
 import org.example.service.VideoService;
 import org.example.utils.AsyncUtil;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -49,6 +52,9 @@ public class VideoServiceImpl implements VideoService {
 
     @Value("${upload.path}")
     private String savaPath;
+
+    @Autowired
+    private RedissonClient redissonClient;
 
 
     @Override
@@ -90,90 +96,145 @@ public class VideoServiceImpl implements VideoService {
         Page<Video> videoPage = new Page<>(videoListDTO.getPage_num(),videoListDTO.getPage_size());
         videoMapper.selectPage(videoPage,new LambdaQueryWrapper<Video>().eq(Video::getUserId,Long.parseLong(videoListDTO.getUser_id())));
 
-        List<Video> videoList = videoPage.getRecords();
-        return videoList;
+        return videoPage.getRecords();
+
     }
 
     @Override
     public List<Video> getVideoPopular(){
-        Set<Long> videoIdSet = redisTemplate.opsForZSet().reverseRange("video:rank:total:", 0, 9);
+        Set<Long> videoIdSet = redisTemplate.opsForZSet().reverseRange(RedisKey.VIDEO_RANK_TOTAL, 0, 9);
         if(CollectionUtils.isEmpty(videoIdSet)){
-            synchronized (this){
-                if(videoIdSet.size()==0){
-                    List<Video> videoLists = videoMapper.selectList(new LambdaQueryWrapper<Video>()
-                            .select(Video::getId, Video::getVisitCount)
-                            .orderByDesc(Video::getVisitCount)
-                            .last("limit 10"));
-                    videoLists.forEach(video->{
-                        redisTemplate.opsForZSet().add("video:rank:total:",video.getId(),video.getVisitCount());
-                    });
+            RLock lock = redissonClient.getLock(RedisKey.LOCK_RANK_INIT);
+            try{
+                boolean success = lock.tryLock(3,10,TimeUnit.SECONDS);
+                if(success){
+                    // 再次查询，可能有别的线程已经加载过缓存了
+                    videoIdSet = redisTemplate.opsForZSet().reverseRange(RedisKey.VIDEO_RANK_TOTAL, 0, 9);
+                    if(CollectionUtils.isEmpty(videoIdSet)){
+                        List<Video> videoLists = videoMapper.selectList(new LambdaQueryWrapper<Video>()
+                                .select(Video::getId, Video::getVisitCount)
+                                .orderByDesc(Video::getVisitCount)
+                                .last("limit 10"));
+                        videoLists.forEach(video-> redisTemplate.opsForZSet().add(RedisKey.VIDEO_RANK_TOTAL,video.getId(),video.getVisitCount()));
+                    }
                 }
+            }catch (Exception e){
+                throw new RuntimeException(e);
+            }finally {
+                lock.unlock();
             }
-            videoIdSet = redisTemplate.opsForZSet().reverseRange("video:rank:total:", 0, 9);
+            videoIdSet = redisTemplate.opsForZSet().reverseRange(RedisKey.VIDEO_RANK_TOTAL, 0, 9);
         }
         List<Long> videoIdList = new ArrayList<Long>(videoIdSet);
-        List<String> videoDetailIds = videoIdSet.stream().map(id->"video:detail:" + id).toList();
+        List<String> videoDetailIds = videoIdSet.stream().map(id->RedisKey.VIDEO_DETAIL + id).toList();
         List<Object> videoDetails = redisTemplate.opsForValue().multiGet(videoDetailIds);
         List<Video> videoList = new ArrayList<>();
+        // 查详细信息
         for (int i = 0; i < videoDetails.size(); i++) {
-            Long videoId =videoIdList.get(i);
-            Video videoDetail = (Video)videoDetails.get(i);
-            if(Objects.isNull(videoDetail)){
-                videoDetail = videoMapper.selectById(videoId);
-                if(!Objects.isNull(videoDetail)){
-                    redisTemplate.opsForValue().set("video:detail:" + videoId, videoDetail, 1, TimeUnit.DAYS);
+            Long id = videoIdList.get(i);
+            Video video = (Video) videoDetails.get(i);
+            if(Objects.isNull(video)){
+                // 缓存中没有 
+                RLock lock = redissonClient.getLock(RedisKey.LOCK_VIDEO_DETAIL + id);
+                try {
+                    lock.lock();
+                    video = (Video)redisTemplate.opsForValue().get(RedisKey.VIDEO_DETAIL + id);
+                    if(video == null){
+                        video = videoMapper.selectById(id);
+                        if(video == null){
+                            // 缓存穿透
+                            redisTemplate.opsForValue().set(RedisKey.VIDEO_DETAIL + id,"null",5,TimeUnit.MINUTES);
+                            continue;
+                        }else{
+                            redisTemplate.opsForValue().set(RedisKey.VIDEO_DETAIL + id,video,1,TimeUnit.DAYS);
+                        }
+                    }
+                }finally {
+                    lock.unlock();
                 }
             }
-            if(!Objects.isNull(videoDetail)){
-                Double score = redisTemplate.opsForZSet().score("video:rank:total:", videoId);
-                if(!Objects.isNull(score)){
-                    videoDetail.setVisitCount(score.intValue());
+            // 设置点击量、点赞量、评论数
+            Double score = redisTemplate.opsForZSet().score(RedisKey.VIDEO_RANK_TOTAL, id);
+            if (score != null) video.setVisitCount(score.intValue());
+
+            String likeKey = RedisKey.VIDEO_LIKE + id;
+            Long likeCount;
+            if (redisTemplate.hasKey(likeKey)) {
+                likeCount = redisTemplate.opsForSet().size(likeKey);
+            } else {
+                RLock likeLock = redissonClient.getLock(RedisKey.LOCK_VIDEO_LIKE_INIT + id);
+                try {
+                    likeLock.lock();
+                    if (!redisTemplate.hasKey(likeKey)) {
+                        List<Long> userIds = likeMapper.selectUserIdsByVideoId(id);
+                        if (!userIds.isEmpty()) {
+                            redisTemplate.opsForSet().add(likeKey, userIds.toArray());
+                        }
+                    }
+                    likeCount = redisTemplate.opsForSet().size(likeKey);
+                } finally {
+                    likeLock.unlock();
                 }
-                if(!redisTemplate.hasKey("video:like:"+videoId)){
-                    List<Long> userIds = likeMapper.selectUserIdsByVideoId(videoId);
-                    userIds.forEach(userId -> {
-                        redisTemplate.opsForSet().add("video:like:"+videoId,userId);
-                    });
-                }
-                Long likeCount = redisTemplate.opsForSet().size("video:like:" + videoId);
-                if(!Objects.isNull(likeCount)){
-                    videoDetail.setLikeCount(likeCount.intValue());
-                }
-                if(!redisTemplate.opsForHash().hasKey("video:comment:",String.valueOf(videoId))){
-                    int commentCount = videoMapper.selectOne(new LambdaQueryWrapper<Video>().eq(Video::getId, videoId)).getCommentCount();
-                    redisTemplate.opsForHash().increment("video:comment:",String.valueOf(videoId),commentCount);
-                }
-                Integer commentCount = (Integer)redisTemplate.opsForHash().get("video:comment:", String.valueOf(videoId));
-                if(!Objects.isNull(commentCount)){
-                    videoDetail.setCommentCount(commentCount.intValue());
-                }
-                videoList.add(videoDetail);
             }
+            video.setLikeCount(likeCount == null ? 0 : likeCount.intValue());
+
+            String field = String.valueOf(id);
+            Integer commentCount;
+            if (redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT, field)) {
+                commentCount = (Integer) redisTemplate.opsForHash().get(RedisKey.VIDEO_COMMENT, field);
+            } else {
+                RLock commentLock = redissonClient.getLock(RedisKey.LOCK_VIDEO_COMMENT_INIT + id);
+                try {
+                    commentLock.lock();
+                    if (!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT, field)) {
+                        int count = videoMapper.selectOne(
+                                new LambdaQueryWrapper<Video>().eq(Video::getId, id)
+                        ).getCommentCount();
+                        redisTemplate.opsForHash().put(RedisKey.VIDEO_COMMENT, field, count);
+                        commentCount = count;
+                    } else {
+                        commentCount = (Integer) redisTemplate.opsForHash().get(RedisKey.VIDEO_COMMENT, field);
+                    }
+                } finally {
+                    commentLock.unlock();
+                }
+            }
+            video.setCommentCount(commentCount == null ? 0 : commentCount);
+
+            videoList.add(video);
         }
-        videoList.sort((v1,v2)-> v2.getVisitCount()-v1.getVisitCount());// 以防在前面的系列操作中打乱了顺序
+
+        videoList.sort((v1, v2) -> v2.getVisitCount() - v1.getVisitCount());
 
         return videoList;
     }
+
     
     @Override
-    public int visitVideo(Long videoId){
-        redisTemplate.opsForHash().increment("video:rank:increment:",String.valueOf(videoId),1);
-        Double score = redisTemplate.opsForZSet().score("video:rank:total:", videoId);
+    public void visitVideo(Long videoId){
+        redisTemplate.opsForHash().increment(RedisKey.VIDEO_RANK_INCREMENT,String.valueOf(videoId),1);
+        Double score = redisTemplate.opsForZSet().score(RedisKey.VIDEO_RANK_TOTAL, videoId);
         if(Objects.isNull(score)){
-            Video video = videoMapper.selectById(videoId);
-            if(!Objects.isNull(video)){
-                redisTemplate.opsForZSet().add("video:rank:total:",video.getId(),video.getVisitCount());
-            }else{
-                throw new RuntimeException("the video is not exist");
+            RLock lock = redissonClient.getLock(RedisKey.LOCK_VIDEO_RANK + videoId);
+            try{
+                lock.lock();
+                score = redisTemplate.opsForZSet().score(RedisKey.VIDEO_RANK_TOTAL, videoId);
+                if(Objects.isNull(score)){
+                    Video video = videoMapper.selectById(videoId);
+                    if(!Objects.isNull(video)){
+                        redisTemplate.opsForZSet().add(RedisKey.VIDEO_RANK_TOTAL,video.getId(),video.getVisitCount());
+                    }
+                }
+            }finally {
+                lock.unlock();
             }
+
         }
-        Double visitCount = redisTemplate.opsForZSet().incrementScore("video:rank:total:", videoId, 1);
-        return visitCount.intValue();
+        Double visitCount = redisTemplate.opsForZSet().incrementScore(RedisKey.VIDEO_RANK_TOTAL, videoId, 1);
     }
 
     @Override
     public List<Video> searchVideo(VideoSearchDTO videoSearchDTO,Long id){
-        String key = "video:search:history:";
 
         int current = videoSearchDTO.getPage_num() > 0 ? videoSearchDTO.getPage_num() : 1;
         int size = videoSearchDTO.getPage_size() >0 ? videoSearchDTO.getPage_size() : 10;
@@ -181,7 +242,7 @@ public class VideoServiceImpl implements VideoService {
         LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<Video>();
         String keywords = videoSearchDTO.getKeywords();
         // 将搜索记录存到redis中，后续若有别的操作可以将其取出来
-        redisTemplate.opsForZSet().add(key+id,keywords,LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+        redisTemplate.opsForZSet().add(RedisKey.VIDEO_SEARCH_HISTORY+id,keywords,LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
         wrapper.and(StringUtils.hasText(keywords),wrapperItem->wrapperItem
                 .like(Video::getTitle,keywords)
                 .or()

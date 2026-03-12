@@ -12,6 +12,7 @@ import org.example.model.dto.CommentListDTO;
 import org.example.model.dto.CommentPublishDTO;
 import org.example.model.dto.LikeActionDTO;
 import org.example.model.dto.LikeListDTO;
+import org.example.model.normal.RedisKey;
 import org.example.model.pojo.Comment;
 import org.example.model.pojo.Like;
 import org.example.model.pojo.Video;
@@ -20,11 +21,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Transactional(rollbackFor=Exception.class)
@@ -78,13 +81,22 @@ public class ActionServiceImpl implements ActionService {
                         .eq(Video::getId,videoId)
                 .setSql("like_count = like_count + 1")
                 );
-                if(!redisTemplate.hasKey("video:like:"+videoId)){
-                    List<Long> userIds = likeMapper.selectUserIdsByVideoId(videoId);
-                    userIds.forEach(userId -> {
-                        redisTemplate.opsForSet().add("video:like:"+videoId,userId);
-                    });
+                if(!redisTemplate.hasKey(RedisKey.VIDEO_LIKE+videoId)){
+                    Boolean lock = redisTemplate.opsForValue().setIfAbsent(RedisKey.LOCK_VIDEO_LIKE_INIT + videoId, "1", 10, TimeUnit.SECONDS);
+                    if(Boolean.TRUE.equals(lock)){
+                        try{
+                            if(!redisTemplate.hasKey(RedisKey.VIDEO_LIKE+videoId)){
+                                List<Long> userIds = likeMapper.selectUserIdsByVideoId(videoId);
+                                if(!CollectionUtils.isEmpty(userIds)){
+                                    redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,userIds.toArray());
+                                }
+                            }
+                        }catch (Exception e){
+                            throw new RuntimeException(e);
+                        }finally {redisTemplate.delete(RedisKey.LOCK_VIDEO_LIKE_INIT+videoId);}
+                    }
                 }
-                redisTemplate.opsForSet().add("video:like:"+videoId,id);
+                redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,id);
             }
             Like like = new Like(null,id,videoId,commentId,LocalDateTime.now());
 
@@ -114,13 +126,13 @@ public class ActionServiceImpl implements ActionService {
                         .eq(Video::getId,videoId)
                         .setSql("like_count = like_count - 1")
                 );
-                if(!redisTemplate.hasKey("video:like:"+videoId)){
+                if(!redisTemplate.hasKey(RedisKey.VIDEO_LIKE+videoId)){
                     List<Long> userIds = likeMapper.selectUserIdsByVideoId(videoId);
                     userIds.forEach(userId -> {
-                        redisTemplate.opsForSet().add("video:like:"+videoId,userId);
+                        redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,userId);
                     });
                 }
-                redisTemplate.opsForSet().remove("video:like:"+videoId,id);
+                redisTemplate.opsForSet().remove(RedisKey.VIDEO_LIKE+videoId,id);
             }
         }else{
             throw new IllegalArgumentException("action type error");
@@ -190,11 +202,22 @@ public class ActionServiceImpl implements ActionService {
             insertComment.setReplyUserId(video.getUserId());
         }
         commentMapper.insert(insertComment);
-        if(!redisTemplate.opsForHash().hasKey("video:comment:",String.valueOf(targetVideoId))){
-            int commentCount = videoMapper.selectOne(new LambdaQueryWrapper<Video>().eq(Video::getId, targetVideoId)).getCommentCount();
-            redisTemplate.opsForHash().increment("video:comment:",String.valueOf(targetVideoId),commentCount);
+        if(!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId))){
+            Boolean lock = redisTemplate.opsForValue().setIfAbsent(RedisKey.LOCK_VIDEO_COMMENT_INIT + targetVideoId,
+                    "1", 10L, TimeUnit.SECONDS);
+            if(Boolean.TRUE.equals(lock)){
+                try{
+                    if(!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId))){
+                        int commentCount = videoMapper.selectOne(new LambdaQueryWrapper<Video>().eq(Video::getId, targetVideoId)).getCommentCount();
+                        redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId),commentCount);
+                    }
+                }finally {
+                    redisTemplate.delete(RedisKey.LOCK_VIDEO_COMMENT_INIT + targetVideoId);
+                }
+            }
+
         }
-        redisTemplate.opsForHash().increment("video:comment:",String.valueOf(targetVideoId),1);
+        redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId),1);
 
         int rows = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, targetVideoId)
@@ -287,10 +310,10 @@ public class ActionServiceImpl implements ActionService {
                     .setSql("comment_count = comment_count - "+rows)
             );
         }
-        if(!redisTemplate.opsForHash().hasKey("video:comment:",String.valueOf(deleteVideoId))){
+        if(!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT,String.valueOf(deleteVideoId))){
             int commentCount = videoMapper.selectOne(new LambdaQueryWrapper<Video>().eq(Video::getId, deleteVideoId)).getCommentCount();
-            redisTemplate.opsForHash().increment("video:comment:",String.valueOf(deleteVideoId),commentCount);
+            redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(deleteVideoId),commentCount);
         }
-        redisTemplate.opsForHash().increment("video:comment:",String.valueOf(deleteVideoId),-rows);
+        redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(deleteVideoId),-rows);
     }
 }

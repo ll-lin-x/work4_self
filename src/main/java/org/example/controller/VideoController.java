@@ -3,7 +3,7 @@ package org.example.controller;
 import org.example.model.dto.VideoListDTO;
 import org.example.model.dto.VideoPublishDTO;
 import org.example.model.dto.VideoSearchDTO;
-import org.example.model.pojo.Result;
+import org.example.model.normal.Result;
 import org.example.model.pojo.User;
 import org.example.model.pojo.Video;
 import org.example.model.vo.VideoVO;

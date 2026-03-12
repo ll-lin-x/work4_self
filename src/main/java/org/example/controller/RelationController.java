@@ -1,8 +1,7 @@
 package org.example.controller;
 
-import org.apache.ibatis.annotations.Param;
 import org.example.model.dto.FollowingListDTO;
-import org.example.model.pojo.Result;
+import org.example.model.normal.Result;
 import org.example.model.pojo.User;
 import org.example.model.vo.FollowingListVO;
 import org.example.service.RelationService;
