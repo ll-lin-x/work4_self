@@ -26,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -44,21 +45,15 @@ public class ActionServiceImpl implements ActionService {
 
     @Override
     public void likeAction(LikeActionDTO likeActionDTO, Long id){
-        // 幂等性检查
-        boolean isComment = StringUtils.hasText(likeActionDTO.getComment_id());
-        Long targetId = isComment ? Long.parseLong(likeActionDTO.getComment_id()) : Long.parseLong(likeActionDTO.getVideo_id());
-        LambdaQueryWrapper<Like> query = new LambdaQueryWrapper<Like>()
-                .eq(Like::getUserId, id);
-        if (isComment) query.eq(Like::getCommentId, targetId);
-        else query.eq(Like::getVideoId, targetId);
-
-        Like exist = likeMapper.selectOne(query);
         Long commentId;
         Long videoId;
         if(likeActionDTO.getAction_type().equals("1")){
-            if(exist != null) return;
-
             if(StringUtils.hasText(likeActionDTO.getComment_id())){
+                Like getLike = likeMapper.selectOne(new QueryWrapper<Like>()
+                                .eq("comment_id", likeActionDTO.getComment_id()));
+                if(getLike != null){
+                    return;
+                }
                 // 给评论点赞
                 commentId = Long.parseLong(likeActionDTO.getComment_id());
                 Comment comment = commentMapper.selectById(commentId);
@@ -73,38 +68,32 @@ public class ActionServiceImpl implements ActionService {
                         .setSql("like_count = like_count + 1")
                 );
             }else{
+                // 给视频点赞
                 commentId = null;
                 videoId = Long.parseLong(likeActionDTO.getVideo_id());
-                Video video = videoMapper.selectById(videoId);
-                if(video == null) throw new RuntimeException("the video is not exist");
-                videoMapper.update(null,new LambdaUpdateWrapper<Video>()
-                        .eq(Video::getId,videoId)
-                .setSql("like_count = like_count + 1")
-                );
-                if(!redisTemplate.hasKey(RedisKey.VIDEO_LIKE+videoId)){
-                    Boolean lock = redisTemplate.opsForValue().setIfAbsent(RedisKey.LOCK_VIDEO_LIKE_INIT + videoId, "1", 10, TimeUnit.SECONDS);
-                    if(Boolean.TRUE.equals(lock)){
-                        try{
-                            if(!redisTemplate.hasKey(RedisKey.VIDEO_LIKE+videoId)){
-                                List<Long> userIds = likeMapper.selectUserIdsByVideoId(videoId);
-                                if(!CollectionUtils.isEmpty(userIds)){
-                                    redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,userIds.toArray());
-                                }
-                            }
-                        }catch (Exception e){
-                            throw new RuntimeException(e);
-                        }finally {redisTemplate.delete(RedisKey.LOCK_VIDEO_LIKE_INIT+videoId);}
+                Boolean isMember = redisTemplate.opsForSet().isMember(RedisKey.VIDEO_LIKE + videoId, id);
+                if(!Boolean.TRUE.equals(isMember)){
+                    // 未点赞
+                    int update = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+                            .eq(Video::getId, videoId)
+                            .setSql("like_count = like_count + 1")
+                    );
+                    if(update > 0){
+                        redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,id);
                     }
                 }
-                redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,id);
             }
             Like like = new Like(null,id,videoId,commentId,LocalDateTime.now());
 
             likeMapper.insert(like);
 
         } else if (likeActionDTO.getAction_type().equals("2")) {
-            if(exist==null) return;
             if(StringUtils.hasText(likeActionDTO.getComment_id())){
+                Like getLike = likeMapper.selectOne(new QueryWrapper<Like>()
+                        .eq("comment_id", likeActionDTO.getComment_id()));
+                if(getLike == null){
+                    return;
+                }
                 // 给评论取消点赞  直接删除
                 commentId = Long.parseLong(likeActionDTO.getComment_id());
                 likeMapper.delete(new LambdaQueryWrapper<Like>()
@@ -126,12 +115,6 @@ public class ActionServiceImpl implements ActionService {
                         .eq(Video::getId,videoId)
                         .setSql("like_count = like_count - 1")
                 );
-                if(!redisTemplate.hasKey(RedisKey.VIDEO_LIKE+videoId)){
-                    List<Long> userIds = likeMapper.selectUserIdsByVideoId(videoId);
-                    userIds.forEach(userId -> {
-                        redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,userId);
-                    });
-                }
                 redisTemplate.opsForSet().remove(RedisKey.VIDEO_LIKE+videoId,id);
             }
         }else{
@@ -202,21 +185,6 @@ public class ActionServiceImpl implements ActionService {
             insertComment.setReplyUserId(video.getUserId());
         }
         commentMapper.insert(insertComment);
-        if(!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId))){
-            Boolean lock = redisTemplate.opsForValue().setIfAbsent(RedisKey.LOCK_VIDEO_COMMENT_INIT + targetVideoId,
-                    "1", 10L, TimeUnit.SECONDS);
-            if(Boolean.TRUE.equals(lock)){
-                try{
-                    if(!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId))){
-                        int commentCount = videoMapper.selectOne(new LambdaQueryWrapper<Video>().eq(Video::getId, targetVideoId)).getCommentCount();
-                        redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId),commentCount);
-                    }
-                }finally {
-                    redisTemplate.delete(RedisKey.LOCK_VIDEO_COMMENT_INIT + targetVideoId);
-                }
-            }
-
-        }
         redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId),1);
 
         int rows = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
@@ -309,10 +277,6 @@ public class ActionServiceImpl implements ActionService {
                     .eq(Video::getId, deleteVideoId)
                     .setSql("comment_count = comment_count - "+rows)
             );
-        }
-        if(!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT,String.valueOf(deleteVideoId))){
-            int commentCount = videoMapper.selectOne(new LambdaQueryWrapper<Video>().eq(Video::getId, deleteVideoId)).getCommentCount();
-            redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(deleteVideoId),commentCount);
         }
         redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(deleteVideoId),-rows);
     }

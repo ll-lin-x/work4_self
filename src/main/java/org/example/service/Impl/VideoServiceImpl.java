@@ -106,7 +106,7 @@ public class VideoServiceImpl implements VideoService {
         if(CollectionUtils.isEmpty(videoIdSet)){
             RLock lock = redissonClient.getLock(RedisKey.LOCK_RANK_INIT);
             try{
-                boolean success = lock.tryLock(3,10,TimeUnit.SECONDS);
+                boolean success = lock.tryLock(3,TimeUnit.SECONDS);
                 if(success){
                     // 再次查询，可能有别的线程已经加载过缓存了
                     videoIdSet = redisTemplate.opsForZSet().reverseRange(RedisKey.VIDEO_RANK_TOTAL, 0, 9);
@@ -230,7 +230,6 @@ public class VideoServiceImpl implements VideoService {
             }
 
         }
-        Double visitCount = redisTemplate.opsForZSet().incrementScore(RedisKey.VIDEO_RANK_TOTAL, videoId, 1);
     }
 
     @Override
