@@ -185,7 +185,6 @@ public class ActionServiceImpl implements ActionService {
             insertComment.setReplyUserId(video.getUserId());
         }
         commentMapper.insert(insertComment);
-        redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(targetVideoId),1);
 
         int rows = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, targetVideoId)
@@ -278,6 +277,5 @@ public class ActionServiceImpl implements ActionService {
                     .setSql("comment_count = comment_count - "+rows)
             );
         }
-        redisTemplate.opsForHash().increment(RedisKey.VIDEO_COMMENT,String.valueOf(deleteVideoId),-rows);
     }
 }

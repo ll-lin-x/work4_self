@@ -12,7 +12,7 @@ import java.util.List;
 public interface VideoService {
     Result publish(VideoPublishDTO videoPublishDTO, Long id);
 
-    List<Video> getVideoFeed(LocalDateTime dateTime);
+    List<Video> getVideoFeed(Double dateTime,Long id);
 
     List<Video> getPublishList(VideoListDTO videoListDTO, Long id);
 

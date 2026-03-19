@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.mapper.LikeMapper;
+import org.example.mapper.RelationMapper;
 import org.example.mapper.UserMapper;
 import org.example.mapper.VideoMapper;
 import org.example.model.dto.VideoListDTO;
@@ -11,6 +12,7 @@ import org.example.model.dto.VideoPublishDTO;
 import org.example.model.dto.VideoSearchDTO;
 import org.example.model.normal.RedisKey;
 import org.example.model.normal.Result;
+import org.example.model.pojo.Relation;
 import org.example.model.pojo.User;
 import org.example.model.pojo.Video;
 import org.example.service.VideoService;
@@ -20,6 +22,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -30,6 +33,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class VideoServiceImpl implements VideoService {
@@ -48,7 +52,7 @@ public class VideoServiceImpl implements VideoService {
     private UserMapper userMapper;
 
     @Autowired
-    private LikeMapper likeMapper;
+    private RelationMapper relationMapper;
 
     @Value("${upload.path}")
     private String savaPath;
@@ -58,11 +62,18 @@ public class VideoServiceImpl implements VideoService {
 
 
     @Override
-    public List<Video> getVideoFeed(LocalDateTime dateTime) {
-        if(Objects.isNull(dateTime)){
+    public List<Video> getVideoFeed(Double dateTime,Long id) {
+        Set<ZSetOperations.TypedTuple<Object>> set = redisTemplate.opsForZSet()
+                .reverseRangeByScoreWithScores(RedisKey.USER_FEED + id, dateTime ,Double.MAX_VALUE);
+        List<Long> videoIds = set.stream().map(tuple-> Long.valueOf(tuple.getValue().toString())).toList();
+        if(videoIds.isEmpty()){
             return videoMapper.selectList(null);
         }
-        return videoMapper.selectList(new LambdaQueryWrapper<Video>().gt(Video::getUpdatedAt, dateTime));
+
+        String ids = videoIds.stream().map(Object::toString).collect(Collectors.joining(","));
+        return videoMapper.selectList(new LambdaQueryWrapper<Video>()
+                .in(Video::getId, videoIds)
+                .last("order by field (id," + ids + ")"));
     }
 
     @Override
@@ -82,6 +93,15 @@ public class VideoServiceImpl implements VideoService {
             Video video = new Video(null,id,"","",videoPublishDTO.getTitle(),videoPublishDTO.getDescription(),
                     0,0,0, LocalDateTime.now(),LocalDateTime.now(),LocalDateTime.now().minusYears(100));
             videoMapper.insert(video);
+            Long videoId = video.getId();
+            List<Relation> relations = relationMapper.selectList(new LambdaQueryWrapper<Relation>()
+                    .eq(Relation::getFocusUserId, id)
+            );
+            List<Long> ids = relations.stream().map(Relation::getUserId).toList();
+            for (int i = 0; i < ids.size(); i++) {
+                redisTemplate.opsForZSet().add(RedisKey.USER_FEED+ids.get(i),videoId,System.currentTimeMillis());
+            }
+
             asyncUtil.publishVideoAsync(tempFile,videoPublishDTO.getTitle(),id);
 
             return Result.success();
@@ -126,87 +146,12 @@ public class VideoServiceImpl implements VideoService {
             videoIdSet = redisTemplate.opsForZSet().reverseRange(RedisKey.VIDEO_RANK_TOTAL, 0, 9);
         }
         List<Long> videoIdList = new ArrayList<Long>(videoIdSet);
-        List<String> videoDetailIds = videoIdSet.stream().map(id->RedisKey.VIDEO_DETAIL + id).toList();
-        List<Object> videoDetails = redisTemplate.opsForValue().multiGet(videoDetailIds);
-        List<Video> videoList = new ArrayList<>();
-        // 查详细信息
-        for (int i = 0; i < videoDetails.size(); i++) {
-            Long id = videoIdList.get(i);
-            Video video = (Video) videoDetails.get(i);
-            if(Objects.isNull(video)){
-                // 缓存中没有 
-                RLock lock = redissonClient.getLock(RedisKey.LOCK_VIDEO_DETAIL + id);
-                try {
-                    lock.lock();
-                    video = (Video)redisTemplate.opsForValue().get(RedisKey.VIDEO_DETAIL + id);
-                    if(video == null){
-                        video = videoMapper.selectById(id);
-                        if(video == null){
-                            // 缓存穿透
-                            redisTemplate.opsForValue().set(RedisKey.VIDEO_DETAIL + id,"null",5,TimeUnit.MINUTES);
-                            continue;
-                        }else{
-                            redisTemplate.opsForValue().set(RedisKey.VIDEO_DETAIL + id,video,1,TimeUnit.DAYS);
-                        }
-                    }
-                }finally {
-                    lock.unlock();
-                }
-            }
-            // 设置点击量、点赞量、评论数
-            Double score = redisTemplate.opsForZSet().score(RedisKey.VIDEO_RANK_TOTAL, id);
-            if (score != null) video.setVisitCount(score.intValue());
-
-            String likeKey = RedisKey.VIDEO_LIKE + id;
-            Long likeCount;
-            if (redisTemplate.hasKey(likeKey)) {
-                likeCount = redisTemplate.opsForSet().size(likeKey);
-            } else {
-                RLock likeLock = redissonClient.getLock(RedisKey.LOCK_VIDEO_LIKE_INIT + id);
-                try {
-                    likeLock.lock();
-                    if (!redisTemplate.hasKey(likeKey)) {
-                        List<Long> userIds = likeMapper.selectUserIdsByVideoId(id);
-                        if (!userIds.isEmpty()) {
-                            redisTemplate.opsForSet().add(likeKey, userIds.toArray());
-                        }
-                    }
-                    likeCount = redisTemplate.opsForSet().size(likeKey);
-                } finally {
-                    likeLock.unlock();
-                }
-            }
-            video.setLikeCount(likeCount == null ? 0 : likeCount.intValue());
-
-            String field = String.valueOf(id);
-            Integer commentCount;
-            if (redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT, field)) {
-                commentCount = (Integer) redisTemplate.opsForHash().get(RedisKey.VIDEO_COMMENT, field);
-            } else {
-                RLock commentLock = redissonClient.getLock(RedisKey.LOCK_VIDEO_COMMENT_INIT + id);
-                try {
-                    commentLock.lock();
-                    if (!redisTemplate.opsForHash().hasKey(RedisKey.VIDEO_COMMENT, field)) {
-                        int count = videoMapper.selectOne(
-                                new LambdaQueryWrapper<Video>().eq(Video::getId, id)
-                        ).getCommentCount();
-                        redisTemplate.opsForHash().put(RedisKey.VIDEO_COMMENT, field, count);
-                        commentCount = count;
-                    } else {
-                        commentCount = (Integer) redisTemplate.opsForHash().get(RedisKey.VIDEO_COMMENT, field);
-                    }
-                } finally {
-                    commentLock.unlock();
-                }
-            }
-            video.setCommentCount(commentCount == null ? 0 : commentCount);
-
-            videoList.add(video);
-        }
-
-        videoList.sort((v1, v2) -> v2.getVisitCount() - v1.getVisitCount());
-
-        return videoList;
+        String ids = videoIdList.stream()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+        return videoMapper.selectList(new LambdaQueryWrapper<Video>().in(Video::getId, videoIdList)
+                .last("order by field (id," + ids + ")")
+        );
     }
 
     
@@ -214,7 +159,7 @@ public class VideoServiceImpl implements VideoService {
     public void visitVideo(Long videoId){
         redisTemplate.opsForHash().increment(RedisKey.VIDEO_RANK_INCREMENT,String.valueOf(videoId),1);
         Double score = redisTemplate.opsForZSet().score(RedisKey.VIDEO_RANK_TOTAL, videoId);
-        if(Objects.isNull(score)){
+        if(score==null){
             RLock lock = redissonClient.getLock(RedisKey.LOCK_VIDEO_RANK + videoId);
             try{
                 lock.lock();
@@ -230,6 +175,7 @@ public class VideoServiceImpl implements VideoService {
             }
 
         }
+        redisTemplate.opsForZSet().incrementScore(RedisKey.VIDEO_RANK_TOTAL, videoId, 1);
     }
 
     @Override

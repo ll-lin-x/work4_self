@@ -15,7 +15,5 @@ public class Relation {
     private Long id;
     private Long userId;
     private Long FocusUserId;
-    private int flag;
     private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
 }

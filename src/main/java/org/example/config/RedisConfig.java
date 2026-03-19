@@ -17,29 +17,23 @@ public class RedisConfig {
 
     @Bean
     public RedisTemplate<Object, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
+        // 创建Template
         RedisTemplate<Object, Object> template = new RedisTemplate<>();
+        // 设置链接工厂
         template.setConnectionFactory(connectionFactory);
 
-        // 1. 定制 ObjectMapper
         ObjectMapper om = new ObjectMapper();
-        // 注册 Java 8 时间模块
         om.registerModule(new JavaTimeModule());
-        // 关键：禁用将日期写为时间戳，这样存储的就是可读的 ISO 格式字符串
+
+// --- 核心配置：禁用将日期写为时间戳数组，启用数字时间戳 ---
         om.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-        // 启用自动类型包含，这样从 Redis 读取时才知道要转回哪个类
-        om.activateDefaultTyping(LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.PROPERTY);
-
-        // 2. 使用定制的 ObjectMapper 创建序列化器
+        // 设置序列化工具
         GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(om);
-
         template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(serializer);
         template.setHashKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(serializer);
         template.setHashValueSerializer(serializer);
-
         return template;
     }
 }

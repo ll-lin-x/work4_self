@@ -1,5 +1,6 @@
 package org.example.controller;
 
+import org.example.model.domin.LoginUserCache;
 import org.example.model.dto.CommentListDTO;
 import org.example.model.dto.CommentPublishDTO;
 import org.example.model.dto.LikeActionDTO;
@@ -27,24 +28,24 @@ public class ActionController {
     private ActionService actionService;
 
     @PostMapping("/like/action")
-    public Result likeAction(LikeActionDTO likeActionDTO, @AuthenticationPrincipal User user){
+    public Result likeAction(LikeActionDTO likeActionDTO, @AuthenticationPrincipal LoginUserCache loginUserCache){
         if(!StringUtils.hasText(likeActionDTO.getAction_type()) || (!StringUtils.hasText(likeActionDTO.getComment_id()) && !StringUtils.hasText(likeActionDTO.getVideo_id())))
         {
             return Result.error("lack the necessary parameters");
         }
-        actionService.likeAction(likeActionDTO,user.getId());
+        actionService.likeAction(likeActionDTO,loginUserCache.getUser().getId());
         return Result.success();
     }
 
     @GetMapping("/like/list")
-    public Result likeList(LikeListDTO likeListDTO, @AuthenticationPrincipal User user){
+    public Result likeList(LikeListDTO likeListDTO, @AuthenticationPrincipal LoginUserCache loginUserCache){
         Long queryId;
         if(StringUtils.hasText(likeListDTO.getUser_id())){
             queryId = Long.parseLong(likeListDTO.getUser_id());
         }else{
-            queryId = user.getId();
+            queryId = loginUserCache.getUser().getId();
         }
-        if(!Objects.equals(queryId, user.getId())) return Result.error("没有权限查看");
+        if(!Objects.equals(queryId, loginUserCache.getUser().getId())) return Result.error("没有权限查看");
         List<Video> videoList = actionService.likeList(likeListDTO);
         List<VideoVO>  videoVOList = videoList.stream().map(video->{
             VideoVO videoVO = new VideoVO();
@@ -57,17 +58,17 @@ public class ActionController {
     }
 
     @PostMapping("/comment/publish")
-    public Result publishComment(CommentPublishDTO comment,@AuthenticationPrincipal User user){
+    public Result publishComment(CommentPublishDTO comment,@AuthenticationPrincipal LoginUserCache loginUserCache){
         if(!StringUtils.hasText(comment.getContent()) || (!StringUtils.hasText(comment.getComment_id()) && !StringUtils.hasText(comment.getVideo_id())))
         {
             return Result.error("lack the necessary parameters");
         }
-        actionService.publishComment(comment,user.getId());
+        actionService.publishComment(comment,loginUserCache.getUser().getId());
         return Result.success();
     }
 
     @GetMapping("/comment/list")
-    public Result listComments(CommentListDTO commentDTO,@AuthenticationPrincipal User user){
+    public Result listComments(CommentListDTO commentDTO){
         if(!StringUtils.hasText(commentDTO.getComment_id()) && !StringUtils.hasText(commentDTO.getVideo_id()))
         {
             return Result.error("lack the necessary parameters");
@@ -86,10 +87,10 @@ public class ActionController {
     @DeleteMapping("/comment/delete")
     public Result deleteComment(@RequestParam("video_id") String videoId,
                                 @RequestParam("comment_id") String commentId,
-                                @AuthenticationPrincipal User user){
+                                @AuthenticationPrincipal LoginUserCache loginUserCache){
 
         if(!StringUtils.hasText(videoId) && !StringUtils.hasText(commentId)) throw new IllegalArgumentException("lack the necessary parameters");
-        actionService.deleteComment(videoId,commentId,user.getId());
+        actionService.deleteComment(videoId,commentId,loginUserCache.getUser().getId());
         return Result.success();
     }
 }

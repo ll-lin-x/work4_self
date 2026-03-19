@@ -1,5 +1,6 @@
 package org.example.controller;
 
+import org.example.model.domin.LoginUserCache;
 import org.example.model.dto.FollowingListDTO;
 import org.example.model.normal.Result;
 import org.example.model.pojo.User;
@@ -22,10 +23,11 @@ public class RelationController {
     private RelationService relationService;
 
     @PostMapping("/relation/action")
-    public Result relationAction(@RequestParam("to_user_id") String toUserId, @RequestParam("action_type") Integer actionType, @AuthenticationPrincipal User user) {
+    public Result relationAction(@RequestParam("to_user_id") String toUserId, @RequestParam("action_type") Integer actionType,
+                                 @AuthenticationPrincipal LoginUserCache loginUserCache) {
         Long userId = Long.parseLong(toUserId);
-        if(userId.equals(user.getId())) throw new IllegalArgumentException("the to_user_id is the same as your user_id");
-        relationService.relationAction(toUserId,actionType,user.getId());
+        if(userId.equals(loginUserCache.getUser().getId())) throw new IllegalArgumentException("the to_user_id is the same as your user_id");
+        relationService.relationAction(toUserId,actionType,loginUserCache.getUser().getId());
         return Result.success();
     }
     
@@ -49,8 +51,8 @@ public class RelationController {
         return Result.success(map);
     }
     @GetMapping("/friends/list")
-    public Result friendsList(FollowingListDTO followingListDTO,@AuthenticationPrincipal User user) {
-        List<FollowingListVO> friendsList = relationService.friendsList(followingListDTO,user.getId());
+    public Result friendsList(FollowingListDTO followingListDTO,@AuthenticationPrincipal LoginUserCache loginUserCache) {
+        List<FollowingListVO> friendsList = relationService.friendsList(followingListDTO,loginUserCache.getUser().getId());
         HashMap<String,Object> map  = new HashMap<>();
         map.put("items",friendsList);
         map.put("total",friendsList.size());
