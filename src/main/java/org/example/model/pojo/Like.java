@@ -18,5 +18,5 @@ public class Like {
     private Long userId;
     private Long videoId;
     private Long commentId;
-    private LocalDateTime createdAt;
+    private Long createdAt;
 }

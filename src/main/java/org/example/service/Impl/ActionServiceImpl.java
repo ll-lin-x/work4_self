@@ -16,19 +16,26 @@ import org.example.model.normal.RedisKey;
 import org.example.model.pojo.Comment;
 import org.example.model.pojo.Like;
 import org.example.model.pojo.Video;
+import org.example.repository.VideoRepository;
 import org.example.service.ActionService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
+import org.springframework.data.elasticsearch.core.query.ScriptType;
+import org.springframework.data.elasticsearch.core.query.UpdateQuery;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(rollbackFor=Exception.class)
@@ -42,6 +49,8 @@ public class ActionServiceImpl implements ActionService {
     private LikeMapper likeMapper;
     @Autowired
     private RedisTemplate<Object, Object> redisTemplate;
+    @Autowired
+    private ElasticsearchOperations elasticsearchOperations;
 
     @Override
     public void likeAction(LikeActionDTO likeActionDTO, Long id){
@@ -71,19 +80,28 @@ public class ActionServiceImpl implements ActionService {
                 // 给视频点赞
                 commentId = null;
                 videoId = Long.parseLong(likeActionDTO.getVideo_id());
-                Boolean isMember = redisTemplate.opsForSet().isMember(RedisKey.VIDEO_LIKE + videoId, id);
-                if(!Boolean.TRUE.equals(isMember)){
+                Double score = redisTemplate.opsForZSet().score(RedisKey.USER_LIKE + id, videoId);
+                if(score==null){
                     // 未点赞
                     int update = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                             .eq(Video::getId, videoId)
                             .setSql("like_count = like_count + 1")
                     );
                     if(update > 0){
-                        redisTemplate.opsForSet().add(RedisKey.VIDEO_LIKE+videoId,id);
+                        redisTemplate.opsForZSet().add(RedisKey.USER_LIKE+id,videoId,System.currentTimeMillis());
                     }
+                    String script = "ctx._source.likeCount += params.likeCount;" + "ctx._source.updatedAt = params.updatedAt;";
+                    UpdateQuery updateQuery = UpdateQuery.builder(videoId.toString())
+                            .withScript(script)
+                            .withScriptType(ScriptType.INLINE)
+                            .withParams(Map.of(
+                                    "likeCount",1,
+                                    "updatedAt", System.currentTimeMillis()
+                            )).build();
+                    elasticsearchOperations.update(updateQuery, IndexCoordinates.of("video"));
                 }
             }
-            Like like = new Like(null,id,videoId,commentId,LocalDateTime.now());
+            Like like = new Like(null,id,videoId,commentId,System.currentTimeMillis());
 
             likeMapper.insert(like);
 
@@ -115,7 +133,16 @@ public class ActionServiceImpl implements ActionService {
                         .eq(Video::getId,videoId)
                         .setSql("like_count = like_count - 1")
                 );
-                redisTemplate.opsForSet().remove(RedisKey.VIDEO_LIKE+videoId,id);
+                redisTemplate.opsForZSet().remove(RedisKey.USER_LIKE+id,videoId);
+                String script = "ctx._source.likeCount += params.likeCount;" + "ctx._source.updatedAt = params.updatedAt;";
+                UpdateQuery updateQuery = UpdateQuery.builder(videoId.toString())
+                        .withScript(script)
+                        .withScriptType(ScriptType.INLINE)
+                        .withParams(Map.of(
+                                "likeCount",-1,
+                                "updatedAt", System.currentTimeMillis()
+                        )).build();
+                elasticsearchOperations.update(updateQuery, IndexCoordinates.of("video"));
             }
         }else{
             throw new IllegalArgumentException("action type error");
@@ -126,16 +153,38 @@ public class ActionServiceImpl implements ActionService {
 
     @Override
     public List<Video> likeList(LikeListDTO likeListDTO) {
-        int current = likeListDTO.getPage_num() > 0 ? likeListDTO.getPage_num() : 1;
+        int current = likeListDTO.getPage_num() > 0 ? likeListDTO.getPage_num()-1 : 0;
         int size = likeListDTO.getPage_size() >0 ? likeListDTO.getPage_size() : 10;
-        Page<Video> page = new Page<>(current, size);
-        Long userId = Long.parseLong(likeListDTO.getUser_id());
-        IPage<Video> likeVideos = likeMapper.getLikeVideos(page, new QueryWrapper<Like>()
-                .eq("l.user_id", userId)
-                .isNull("l.comment_id")
-                .orderByDesc("l.created_at")
-        );
-        return likeVideos.getRecords();
+        Set<Object> set = redisTemplate.opsForZSet()
+                .reverseRange(RedisKey.USER_LIKE + likeListDTO.getUser_id(), current*size ,current*size+size-1);
+        if (set == null || set.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 3. 转换为 Long 列表
+        List<Long> videoIds = set.stream()
+                .map(obj -> Long.valueOf(obj.toString()))
+                .toList();
+
+        // 4. 构造 ORDER BY FIELD 字符串，确保 ID 顺序与 Redis 中一致
+        String idsSql = videoIds.stream()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+
+        // 5. 数据库查询：使用 in 查询并强制按传入 ID 顺序排序
+        return videoMapper.selectList(new LambdaQueryWrapper<Video>()
+                .in(Video::getId, videoIds)
+                .last("ORDER BY FIELD(id, " + idsSql + ")"));
+
+
+//        Page<Video> page = new Page<>(current, size);
+//        Long userId = Long.parseLong(likeListDTO.getUser_id());
+//        IPage<Video> likeVideos = likeMapper.getLikeVideos(page, new QueryWrapper<Like>()
+//                .eq("l.user_id", userId)
+//                .isNull("l.comment_id")
+//                .orderByDesc("l.created_at")
+//        );
+//        return likeVideos.getRecords();
     }
 
     @Override
@@ -145,16 +194,15 @@ public class ActionServiceImpl implements ActionService {
         insertComment.setUserId(id);
         insertComment.setContent(comment.getContent());
         insertComment.setLikeCount(0);
-        insertComment.setCreatedAt(LocalDateTime.now());
-        insertComment.setUpdatedAt(LocalDateTime.now());
-        insertComment.setDeletedAt(LocalDateTime.now().plusYears(100));
+        insertComment.setCreatedAt(System.currentTimeMillis());
+        insertComment.setUpdatedAt(System.currentTimeMillis());
+        insertComment.setDeletedAt(LocalDateTime.now().plusYears(10).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
         Long targetVideoId;
         // 只要comment_id存在那么都走这一段代码
         if(StringUtils.hasText(comment.getComment_id())){
             // videoId 是空，说明回复的是评论，但是也需要把视频id取到
             Comment parentComment = commentMapper.selectById(comment.getComment_id());
-            if(parentComment == null || parentComment.getDeletedAt().isBefore(LocalDateTime.now()) ||
-                    parentComment.getDeletedAt().equals(LocalDateTime.now())) throw new RuntimeException("the comment does not exist");
+            if(parentComment == null || parentComment.getDeletedAt()<=System.currentTimeMillis()) throw new RuntimeException("the comment does not exist");
             // 被回复的那条评论属于哪个视频那么该评论也是属于哪个视频，所以这个video_id可以设置成一样的
             targetVideoId = parentComment.getVideoId();
             insertComment.setVideoId(targetVideoId);
@@ -180,16 +228,23 @@ public class ActionServiceImpl implements ActionService {
             insertComment.setRootId(0L);
             insertComment.setParentId(0L);
             video = videoMapper.selectOne(new LambdaQueryWrapper<Video>().eq(Video::getId, comment.getVideo_id()));
-            if(Objects.isNull(video) || video.getDeletedAt().isBefore(LocalDateTime.now()) ||
-                    video.getDeletedAt().equals(LocalDateTime.now())) throw new RuntimeException("the video does no exist");
+            if(Objects.isNull(video) || video.getDeletedAt() <= System.currentTimeMillis()) throw new RuntimeException("the video does no exist");
             insertComment.setReplyUserId(video.getUserId());
         }
         commentMapper.insert(insertComment);
 
-        int rows = videoMapper.update(null, new LambdaUpdateWrapper<Video>()
+        videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                 .eq(Video::getId, targetVideoId)
                 .setSql("comment_count = comment_count + 1"));
-        if (rows == 0) throw new RuntimeException("the video info update failed");
+        String script = "ctx._source.commentCount += params.commentCount;" + "ctx._source.updatedAt = params.updatedAt;";
+        UpdateQuery updateQuery = UpdateQuery.builder(targetVideoId.toString())
+                .withScript(script)
+                .withScriptType(ScriptType.INLINE)
+                .withParams(Map.of(
+                        "commentCount",1,
+                        "updatedAt", System.currentTimeMillis()
+                )).build();
+        elasticsearchOperations.update(updateQuery, IndexCoordinates.of("video"));
 
     }
 
@@ -227,8 +282,7 @@ public class ActionServiceImpl implements ActionService {
             // 删除评论前需要判断一下身份  判断要删除的评论是否是该id回复的
             Long deleteCommentId = Long.parseLong(commentId);
             Comment comment = commentMapper.selectById(deleteCommentId);
-            if(comment == null || comment.getDeletedAt().isBefore(LocalDateTime.now()) ||
-                    comment.getDeletedAt().equals(LocalDateTime.now())) throw new RuntimeException("the comment does not exist");
+            if(comment == null || comment.getDeletedAt()<= System.currentTimeMillis()) throw new RuntimeException("the comment does not exist");
             if(!Objects.equals(comment.getUserId(), id)) throw new RuntimeException("这条评论不是你发表的，没有权限删除");
             deleteVideoId = comment.getVideoId();
             Long deleteRootId = comment.getRootId();
@@ -263,8 +317,7 @@ public class ActionServiceImpl implements ActionService {
         }else{
             deleteVideoId = Long.parseLong(videoId);
             Video video = videoMapper.selectById(deleteVideoId);
-            if(video == null || video.getDeletedAt().isBefore(LocalDateTime.now()) ||
-                    video.getDeletedAt().equals(LocalDateTime.now())) throw new RuntimeException("the video does not exist");
+            if(video == null || video.getDeletedAt()<=System.currentTimeMillis()) throw new RuntimeException("the video does not exist");
             if(!Objects.equals(video.getUserId(), id)) throw new RuntimeException("这条评论不是你发表的，没有权限删除");
             rows = commentMapper.update(null, new LambdaUpdateWrapper<Comment>()
                     .eq(Comment::getVideoId, deleteVideoId)
@@ -277,5 +330,14 @@ public class ActionServiceImpl implements ActionService {
                     .setSql("comment_count = comment_count - "+rows)
             );
         }
+        String script = "ctx._source.commentCount += params.commentCount;" + "ctx._source.updatedAt = params.updatedAt;";
+        UpdateQuery updateQuery = UpdateQuery.builder(deleteVideoId.toString())
+                .withScript(script)
+                .withScriptType(ScriptType.INLINE)
+                .withParams(Map.of(
+                        "commentCount",-rows,
+                        "updatedAt", System.currentTimeMillis()
+                )).build();
+        elasticsearchOperations.update(updateQuery, IndexCoordinates.of("video"));
     }
 }

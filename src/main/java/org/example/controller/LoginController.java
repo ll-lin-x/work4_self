@@ -11,6 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 @RestController
 public class LoginController {
 
@@ -23,8 +27,14 @@ public class LoginController {
     @PostMapping("/user/login")
     public Result login(UserLoginDTO user) {
         User userAllInfo = loginService.login(user);
+        LocalDateTime createdAt = Instant.ofEpochMilli(userAllInfo.getCreatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+        LocalDateTime deletedAt = Instant.ofEpochMilli(userAllInfo.getDeletedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+        LocalDateTime updatedAt = Instant.ofEpochMilli(userAllInfo.getUpdatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
         UserVO userVO = new UserVO();
         BeanUtils.copyProperties(userAllInfo, userVO);
+        userVO.setCreatedAt(createdAt);
+        userVO.setDeletedAt(deletedAt);
+        userVO.setUpdatedAt(updatedAt);
         return Result.success(userVO);
     }
 

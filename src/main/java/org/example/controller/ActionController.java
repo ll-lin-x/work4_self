@@ -10,6 +10,7 @@ import org.example.model.normal.Result;
 import org.example.model.pojo.User;
 import org.example.model.pojo.Video;
 import org.example.model.vo.CommentVO;
+import org.example.model.vo.UserVO;
 import org.example.model.vo.VideoVO;
 import org.example.service.ActionService;
 import org.springframework.beans.BeanUtils;
@@ -18,6 +19,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
@@ -38,18 +42,18 @@ public class ActionController {
     }
 
     @GetMapping("/like/list")
-    public Result likeList(LikeListDTO likeListDTO, @AuthenticationPrincipal LoginUserCache loginUserCache){
-        Long queryId;
-        if(StringUtils.hasText(likeListDTO.getUser_id())){
-            queryId = Long.parseLong(likeListDTO.getUser_id());
-        }else{
-            queryId = loginUserCache.getUser().getId();
-        }
-        if(!Objects.equals(queryId, loginUserCache.getUser().getId())) return Result.error("没有权限查看");
+    public Result likeList(LikeListDTO likeListDTO){
         List<Video> videoList = actionService.likeList(likeListDTO);
         List<VideoVO>  videoVOList = videoList.stream().map(video->{
+            LocalDateTime createdAt = Instant.ofEpochMilli(video.getCreatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime deletedAt = Instant.ofEpochMilli(video.getDeletedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime updatedAt = Instant.ofEpochMilli(video.getUpdatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
             VideoVO videoVO = new VideoVO();
-            BeanUtils.copyProperties(video,videoVO);
+            BeanUtils.copyProperties(video, videoVO);
+            videoVO.setCreatedAt(createdAt);
+            videoVO.setDeletedAt(deletedAt);
+            videoVO.setUpdatedAt(updatedAt);
+            BeanUtils.copyProperties(video, videoVO);
             return videoVO;
         }).toList();
         HashMap<String,Object> map = new HashMap<>();
@@ -76,7 +80,13 @@ public class ActionController {
         List<Comment> commentList = actionService.listComments(commentDTO);
         List<CommentVO>  commentVOList = commentList.stream().map(comment->{
             CommentVO commentVO = new CommentVO();
-            BeanUtils.copyProperties(comment,commentVO);
+            LocalDateTime createdAt = Instant.ofEpochMilli(comment.getCreatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime deletedAt = Instant.ofEpochMilli(comment.getDeletedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime updatedAt = Instant.ofEpochMilli(comment.getUpdatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            BeanUtils.copyProperties(comment, commentVO);
+            commentVO.setCreatedAt(createdAt);
+            commentVO.setDeletedAt(deletedAt);
+            commentVO.setUpdatedAt(updatedAt);
             return commentVO;
         }).toList();
         HashMap<String,Object> map = new HashMap<>();

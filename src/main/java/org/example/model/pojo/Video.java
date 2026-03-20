@@ -21,7 +21,7 @@ public class Video {
     private int visitCount;
     private int likeCount;
     private int commentCount;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private LocalDateTime deletedAt;
+    private Long createdAt;
+    private Long updatedAt;
+    private Long deletedAt;
 }

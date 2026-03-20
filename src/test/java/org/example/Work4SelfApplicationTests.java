@@ -23,7 +23,7 @@ class Work4SelfApplicationTests {
 
     @Test
     public void insertUser() {
-        User user = new User(123L,"admin","1234", null, LocalDateTime.now(),LocalDateTime.now(),null,"ADMIN");
+        User user = new User(123L,"admin","1234", null, System.currentTimeMillis(),System.currentTimeMillis(),null,"ADMIN");
         userMapper.insert(user);
     }
 

@@ -17,7 +17,7 @@ public class OssConfig {
     @Value("${aliyun.oss.bucketName}")
     private String bucketName;
 
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     public OSS ossClient() {
         return new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
     }

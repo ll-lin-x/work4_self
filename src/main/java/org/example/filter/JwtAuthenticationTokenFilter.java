@@ -75,7 +75,6 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
 
 //        redisCache.expire(redisKey, 30, java.util.concurrent.TimeUnit.MINUTES);
         // 存入SecurityContextHolder
-        // TODO 权限信息是第三个参数，现在没用上所以设置为null  第一个参数不应该是token，应该是根据redis查找到的LoginUser
         // 这里需要三个参数，这样才能将认证设置为true
         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(loginUser,null,authorities);
         SecurityContextHolder.getContext().setAuthentication(authenticationToken);

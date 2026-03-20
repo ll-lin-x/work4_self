@@ -21,7 +21,7 @@ public class Comment {
     private String content;
     private int likeCount;
     private int childCount;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private LocalDateTime deletedAt;
+    private Long createdAt;
+    private Long updatedAt;
+    private Long deletedAt;
 }

@@ -17,11 +17,12 @@ public class UserVO {
     private String username;
     @JsonProperty("avatar_url")
     private String avatarUrl;
+
+    private String password;
     @JsonProperty("created_at")
     private LocalDateTime createdAt;
     @JsonProperty("updated_at")
     private LocalDateTime updatedAt;
     @JsonProperty("deleted_at")
     private LocalDateTime deletedAt;
-
 }

@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -57,13 +58,13 @@ public class UserServiceImpl implements UserDetailsService {
 
     @Transactional
     public Result register(User user) {
-        user.setCreatedAt(LocalDateTime.now());
-        user.setUpdatedAt(LocalDateTime.now());
+        user.setCreatedAt(System.currentTimeMillis());
+        user.setUpdatedAt(System.currentTimeMillis());
         if(Objects.isNull(user.getAvatarUrl())){
             user.setAvatarUrl("");
         }
         if(Objects.isNull(user.getDeletedAt())){
-            user.setDeletedAt(LocalDateTime.now().minusYears(100));
+            user.setDeletedAt(LocalDateTime.now().plusYears(10).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
         }
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         user.setPermission("ROLE_USER");

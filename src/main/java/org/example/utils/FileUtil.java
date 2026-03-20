@@ -83,11 +83,10 @@ public class FileUtil {
             ossClient.putObject(bucketName, title, file);
             // 返回文件的访问 URL
             return "https://" + bucketName + "." + endpoint + "/" + title;
-        } finally {
-            if (ossClient != null) {
-                ossClient.shutdown();
-            }
+        }catch (Exception e){
+            throw new RuntimeException(e);
         }
+
     }
 
 

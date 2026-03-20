@@ -53,7 +53,7 @@ public class RelationServiceImpl implements RelationService {
             // 关注操作
             // 若已关注则不能再次点击关注
             if(score!=null) return;
-            relationMapper.insert(new Relation(null,userId,focusId,LocalDateTime.now()));
+            relationMapper.insert(new Relation(null,userId,focusId,System.currentTimeMillis()));
             redisTemplate.opsForZSet().add(RedisKey.USER_FOLLOWING + userId, focusId, System.currentTimeMillis());
             redisTemplate.opsForZSet().add(RedisKey.USER_FOLLOWER + focusId, userId, System.currentTimeMillis());
 
@@ -80,7 +80,7 @@ public class RelationServiceImpl implements RelationService {
         Long id = Long.parseLong(followingListDTO.getUser_id());
         Long pageNum = followingListDTO.getPage_num()>0? followingListDTO.getPage_num()-1:0L;
         Long pageSize = followingListDTO.getPage_size()>0? followingListDTO.getPage_size():10L;
-        Set<ZSetOperations.TypedTuple<Object>> set = redisTemplate.opsForZSet().reverseRangeWithScores(RedisKey.USER_FOLLOWING + id, pageNum, pageNum + pageSize-1);
+        Set<ZSetOperations.TypedTuple<Object>> set = redisTemplate.opsForZSet().reverseRangeWithScores(RedisKey.USER_FOLLOWING + id, pageNum*pageSize, pageNum*pageSize + pageSize-1);
         List<Long> userIds = set.stream().map(tuple -> Long.valueOf(tuple.getValue().toString())).toList();
         String ids = userIds.stream().map(Object::toString).collect(Collectors.joining(","));
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>()
@@ -101,7 +101,7 @@ public class RelationServiceImpl implements RelationService {
         Long id = Long.parseLong(followingListDTO.getUser_id());
         Long pageNum = followingListDTO.getPage_num()>0? followingListDTO.getPage_num()-1:0L;
         Long pageSize = followingListDTO.getPage_size()>0? followingListDTO.getPage_size():10L;
-        Set<ZSetOperations.TypedTuple<Object>> set = redisTemplate.opsForZSet().reverseRangeWithScores(RedisKey.USER_FOLLOWER + id, pageNum, pageNum + pageSize-1);
+        Set<ZSetOperations.TypedTuple<Object>> set = redisTemplate.opsForZSet().reverseRangeWithScores(RedisKey.USER_FOLLOWER + id, pageNum*pageSize, pageNum*pageSize + pageSize-1);
         List<Long> userIds = set.stream().map(tuple -> Long.valueOf(tuple.getValue().toString())).toList();
         String ids = userIds.stream().map(Object::toString).collect(Collectors.joining(","));
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>()
@@ -123,7 +123,7 @@ public class RelationServiceImpl implements RelationService {
         String key = RedisKey.USER_FRIEND + userId;
         redisTemplate.opsForZSet().intersectAndStore(RedisKey.USER_FOLLOWING + userId, RedisKey.USER_FOLLOWER + userId, key);
         redisTemplate.expire(key,30, TimeUnit.SECONDS);
-        Set<ZSetOperations.TypedTuple<Object>> set = redisTemplate.opsForZSet().reverseRangeWithScores(key, pageNum, pageNum + pageSize-1);
+        Set<ZSetOperations.TypedTuple<Object>> set = redisTemplate.opsForZSet().reverseRangeWithScores(key, pageNum*pageSize, pageNum*pageSize + pageSize-1);
         List<Long> userIds = set.stream().map(tuple -> Long.valueOf(tuple.getValue().toString())).toList();
         String ids = userIds.stream().map(Object::toString).collect(Collectors.joining(","));
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>()

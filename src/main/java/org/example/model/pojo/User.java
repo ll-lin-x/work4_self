@@ -21,9 +21,9 @@ public class User implements Serializable {
     private String username;
     private String password;
     private String avatarUrl;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private LocalDateTime deletedAt;
+    private Long createdAt;
+    private Long updatedAt;
+    private Long deletedAt;
     private String permission;
 
 

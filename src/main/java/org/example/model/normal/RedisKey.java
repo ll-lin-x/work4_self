@@ -11,7 +11,7 @@ public class RedisKey {
     // 播放量增量
     public static final String VIDEO_RANK_INCREMENT = "video:rank:increment:";
     // 视频点赞
-    public static final String VIDEO_LIKE = "video:like:";
+    public static final String USER_LIKE = "user:like:";
     // 用户收件箱
     public static final String USER_FEED = "user:feed:";
     // 搜索历史

@@ -15,6 +15,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 
@@ -36,7 +39,13 @@ public class VideoController {
         List<Video> videoList= videoService.getVideoFeed(timeStemp,loginUserCache.getUser().getId());
         List<VideoVO> videoVOList = videoList.stream().map(po -> {
             VideoVO vo = new VideoVO();
-            BeanUtils.copyProperties(po, vo); // 自动拷贝同名属性
+            LocalDateTime createdAt = Instant.ofEpochMilli(po.getCreatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime deletedAt = Instant.ofEpochMilli(po.getDeletedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime updatedAt = Instant.ofEpochMilli(po.getUpdatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            BeanUtils.copyProperties(po, vo);
+            vo.setCreatedAt(createdAt);
+            vo.setDeletedAt(deletedAt);
+            vo.setUpdatedAt(updatedAt);
             return vo;
         }).toList();
         HashMap<String, Object> map = new HashMap<>();
@@ -56,7 +65,13 @@ public class VideoController {
         List<Video> videoList= videoService.getPublishList(videoListDTO,user.getId());
         List<VideoVO> videoVOList = videoList.stream().map(po->{
             VideoVO vo = new VideoVO();
-            BeanUtils.copyProperties(po,vo);
+            LocalDateTime createdAt = Instant.ofEpochMilli(po.getCreatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime deletedAt = Instant.ofEpochMilli(po.getDeletedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime updatedAt = Instant.ofEpochMilli(po.getUpdatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            BeanUtils.copyProperties(po, vo);
+            vo.setCreatedAt(createdAt);
+            vo.setDeletedAt(deletedAt);
+            vo.setUpdatedAt(updatedAt);
             return vo;
         }).toList();
         HashMap<String, Object> map = new HashMap<>();
@@ -69,7 +84,13 @@ public class VideoController {
         List<Video> videoList = videoService.getVideoPopular();
         List<VideoVO> videoVOList = videoList.stream().map(video->{
             VideoVO videoVO = new VideoVO();
+            LocalDateTime createdAt = Instant.ofEpochMilli(video.getCreatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime deletedAt = Instant.ofEpochMilli(video.getDeletedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+            LocalDateTime updatedAt = Instant.ofEpochMilli(video.getUpdatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
             BeanUtils.copyProperties(video, videoVO);
+            videoVO.setCreatedAt(createdAt);
+            videoVO.setDeletedAt(deletedAt);
+            videoVO.setUpdatedAt(updatedAt);
             return videoVO;
         }).toList();
         HashMap<String, Object> map = new HashMap<>();
@@ -88,7 +109,13 @@ public class VideoController {
             List<Video> videoList = videoService.searchVideo(videoSearchDTO,loginUserCache.getUser().getId());
             List<VideoVO> videoVOList = videoList.stream().map(video->{
                 VideoVO videoVO = new VideoVO();
+                LocalDateTime createdAt = Instant.ofEpochMilli(video.getCreatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+                LocalDateTime deletedAt = Instant.ofEpochMilli(video.getDeletedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+                LocalDateTime updatedAt = Instant.ofEpochMilli(video.getUpdatedAt()).atZone(ZoneId.systemDefault()).toLocalDateTime();
                 BeanUtils.copyProperties(video, videoVO);
+                videoVO.setCreatedAt(createdAt);
+                videoVO.setDeletedAt(deletedAt);
+                videoVO.setUpdatedAt(updatedAt);
                 return videoVO;
             }).toList();
             HashMap<String, Object> map = new HashMap<>();
