@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 @SpringBootApplication
-@MapperScan("org.example.mapper")
+//@MapperScan("org.example.mapper")
 @EnableAsync
 @EnableScheduling
 @EnableMethodSecurity

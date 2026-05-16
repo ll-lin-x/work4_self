@@ -21,6 +21,9 @@ public class Video {
     private int visitCount;
     private int likeCount;
     private int commentCount;
+    // state: 0-待审核, 1-审核通过, 2-审核不通过
+    private int state;
+    private String reason;
     private Long createdAt;
     private Long updatedAt;
     private Long deletedAt;

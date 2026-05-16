@@ -47,7 +47,7 @@ public class UserServiceImpl implements UserDetailsService {
         if(Objects.isNull(user)){
             throw new RuntimeException("用户不存在");
         }
-        // TODO 查询对应的权限信息
+        // 查询对应的权限信息
         List<String> list = new ArrayList<>();
         String rolePermission = user.getPermission();
         System.out.println("当前用户权限"+rolePermission);

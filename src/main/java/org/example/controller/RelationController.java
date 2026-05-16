@@ -9,10 +9,8 @@ import org.example.service.RelationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.List;
@@ -57,6 +55,11 @@ public class RelationController {
         map.put("items",friendsList);
         map.put("total",friendsList.size());
         return Result.success(map);
+    }
+
+    @PutMapping("/send/image")
+    public Result imageURL(MultipartFile file, @AuthenticationPrincipal LoginUserCache loginUserCache){
+        return Result.success(relationService.imageURL(file));
     }
 
 }

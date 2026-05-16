@@ -87,12 +87,13 @@ public class VideoServiceImpl implements VideoService {
                 .reverseRangeByScoreWithScores(RedisKey.USER_FEED + id, dateTime ,Double.MAX_VALUE);
         List<Long> videoIds = set.stream().map(tuple-> Long.valueOf(tuple.getValue().toString())).toList();
         if(videoIds.isEmpty()){
-            return videoMapper.selectList(null);
+            return videoMapper.selectList(new LambdaQueryWrapper<Video>().eq(Video::getState,1));
         }
 
         String ids = videoIds.stream().map(Object::toString).collect(Collectors.joining(","));
         return videoMapper.selectList(new LambdaQueryWrapper<Video>()
                 .in(Video::getId, videoIds)
+                .eq(Video::getState,1)
                 .last("order by field (id," + ids + ")"));
     }
 
@@ -111,7 +112,7 @@ public class VideoServiceImpl implements VideoService {
             }
             videoPublishDTO.getFile().transferTo(tempFile);
             Video video = new Video(null,id,"","",videoPublishDTO.getTitle(),videoPublishDTO.getDescription(),
-                    0,0,0, System.currentTimeMillis(),System.currentTimeMillis(),LocalDateTime.now().plusYears(10).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+                    0,0,0, 0,null,System.currentTimeMillis(),System.currentTimeMillis(),LocalDateTime.now().plusYears(10).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
             videoMapper.insert(video);
 
 
@@ -140,7 +141,7 @@ public class VideoServiceImpl implements VideoService {
     @Override
     public List<Video> getPublishList(VideoListDTO videoListDTO, Long id) {
         Page<Video> videoPage = new Page<>(videoListDTO.getPage_num(),videoListDTO.getPage_size());
-        videoMapper.selectPage(videoPage,new LambdaQueryWrapper<Video>().eq(Video::getUserId,Long.parseLong(videoListDTO.getUser_id())));
+        videoMapper.selectPage(videoPage,new LambdaQueryWrapper<Video>().eq(Video::getUserId,Long.parseLong(videoListDTO.getUser_id())).eq(Video::getState,1));
 
         return videoPage.getRecords();
 
@@ -160,6 +161,7 @@ public class VideoServiceImpl implements VideoService {
                         List<Video> videoLists = videoMapper.selectList(new LambdaQueryWrapper<Video>()
                                 .select(Video::getId, Video::getVisitCount)
                                 .orderByDesc(Video::getVisitCount)
+                                        .eq(Video::getState,1)
                                 .last("limit 10"));
                         videoLists.forEach(video-> redisTemplate.opsForZSet().add(RedisKey.VIDEO_RANK_TOTAL,video.getId(),video.getVisitCount()));
                     }
@@ -175,7 +177,7 @@ public class VideoServiceImpl implements VideoService {
         String ids = videoIdList.stream()
                 .map(String::valueOf)
                 .collect(Collectors.joining(","));
-        return videoMapper.selectList(new LambdaQueryWrapper<Video>().in(Video::getId, videoIdList)
+        return videoMapper.selectList(new LambdaQueryWrapper<Video>().in(Video::getId, videoIdList).eq(Video::getState,1)
                 .last("order by field (id," + ids + ")")
         );
     }

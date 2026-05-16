@@ -73,8 +73,7 @@ public class ActionController {
 
     @GetMapping("/comment/list")
     public Result listComments(CommentListDTO commentDTO){
-        if(!StringUtils.hasText(commentDTO.getComment_id()) && !StringUtils.hasText(commentDTO.getVideo_id()))
-        {
+        if(!StringUtils.hasText(commentDTO.getComment_id()) && !StringUtils.hasText(commentDTO.getVideo_id())){
             return Result.error("lack the necessary parameters");
         }
         List<Comment> commentList = actionService.listComments(commentDTO);

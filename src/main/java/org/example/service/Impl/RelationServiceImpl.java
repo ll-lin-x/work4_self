@@ -14,12 +14,14 @@ import org.example.model.pojo.User;
 import org.example.model.pojo.Video;
 import org.example.model.vo.FollowingListVO;
 import org.example.service.RelationService;
+import org.example.utils.FileUtil;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,12 +32,17 @@ import java.util.stream.Collectors;
 
 @Service
 public class RelationServiceImpl implements RelationService {
+
+
     @Autowired
     private RelationMapper relationMapper;
     @Autowired
     private UserMapper userMapper;
     @Autowired
     private RedisTemplate redisTemplate;
+
+    @Autowired
+    private FileUtil fileUtil;
 
     @Transactional(rollbackFor = Exception.class)
     @Override
@@ -49,7 +56,7 @@ public class RelationServiceImpl implements RelationService {
         // 自己不能关注/取消关注自己
         if(focusId.equals(userId)) return;
         Double score = redisTemplate.opsForZSet().score(RedisKey.USER_FOLLOWING + userId, focusId);
-        if(actionType==1){
+        if(actionType==0){
             // 关注操作
             // 若已关注则不能再次点击关注
             if(score!=null) return;
@@ -58,7 +65,7 @@ public class RelationServiceImpl implements RelationService {
             redisTemplate.opsForZSet().add(RedisKey.USER_FOLLOWER + focusId, userId, System.currentTimeMillis());
 
 
-        }else if(actionType==2){
+        }else if(actionType==1){
             // 取消关注
             // 若未关注则不能取消关注
             if(score==null) return;
@@ -139,5 +146,12 @@ public class RelationServiceImpl implements RelationService {
         ).toList();
     }
 
+    @Override
+    public String imageURL(MultipartFile file) {
+        if(!fileUtil.isImage(file)){
+            throw new RuntimeException("the upload is not image");
+        }
+        return fileUtil.uploadImageOSS(file);
+    }
 
 }

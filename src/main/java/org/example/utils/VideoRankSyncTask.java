@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.example.mapper.VideoMapper;
 import org.example.model.dto.BatchUpdateDTO;
 import org.example.model.pojo.Video;
+import org.example.service.WebSocketService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -26,6 +27,9 @@ public class VideoRankSyncTask {
 
     @Autowired
     private VideoMapper videoMapper;
+
+    @Autowired
+    private WebSocketService webSocketService;
 
     @Scheduled(cron = "0 0/10 * * * ?")
     public void syncRedisToDb(){
@@ -52,5 +56,10 @@ public class VideoRankSyncTask {
         videoList.forEach(video -> {
             redisTemplate.opsForZSet().add(key,video.getId(),video.getVisitCount());
         });
+    }
+
+    @Scheduled(fixedDelay = 60000)
+    public void flushImMqCache(){
+        webSocketService.asyncSendToMQ();
     }
 }

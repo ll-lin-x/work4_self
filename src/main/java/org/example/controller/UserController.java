@@ -30,7 +30,8 @@ public class UserController {
         return userServiceImpl.register(user);
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+//    @PreAuthorize("hasRole('ROLE_ADMIN')")
+//    @PreAuthorize("hasAnyRole('ADMIN')")
     @GetMapping("/user/info")
     public Result info(@AuthenticationPrincipal LoginUserCache loginUserCache) {
         Long id = loginUserCache.getUser().getId();
